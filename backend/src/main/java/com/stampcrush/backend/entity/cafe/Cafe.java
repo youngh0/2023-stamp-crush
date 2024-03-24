@@ -2,6 +2,7 @@ package com.stampcrush.backend.entity.cafe;
 
 import com.stampcrush.backend.entity.baseentity.BaseDate;
 import com.stampcrush.backend.entity.user.Owner;
+import com.stampcrush.backend.exception.CafeCouponSettingNotFoundException;
 import com.stampcrush.backend.exception.OwnerUnAuthorizationException;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -97,5 +98,12 @@ public class Cafe extends BaseDate {
         if (!this.owner.equals(owner)) {
             throw new OwnerUnAuthorizationException("카페에 대한 권한이 없습니다");
         }
+    }
+
+    public CafePolicy getActiveCafePolicy() {
+        return policies.stream()
+                .filter(CafePolicy::isActive)
+                .findAny()
+                .orElseThrow(() -> new CafeCouponSettingNotFoundException("카페 정책이 존재하지 않습니다."));
     }
 }
