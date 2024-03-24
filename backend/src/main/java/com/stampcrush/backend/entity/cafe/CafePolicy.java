@@ -51,16 +51,16 @@ public class CafePolicy extends BaseDate {
         return new CafePolicy(10, "아메리카노 1잔", 6, cafe);
     }
 
+    public boolean isActive() {
+        return isActivate;
+    }
+
     public void delete() {
         this.deleted = true;
     }
 
     public void disable() {
         this.isActivate = Boolean.FALSE;
-    }
-
-    public CouponPolicy copy() {
-        return new CouponPolicy(maxStampCount, reward, expirePeriod);
     }
 
     public int calculateRewardCouponCount(int earningStampCount) {
