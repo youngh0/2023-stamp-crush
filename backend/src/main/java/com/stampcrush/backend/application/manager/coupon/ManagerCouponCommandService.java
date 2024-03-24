@@ -2,6 +2,7 @@ package com.stampcrush.backend.application.manager.coupon;
 
 import com.stampcrush.backend.application.manager.coupon.dto.StampCreateDto;
 import com.stampcrush.backend.application.manager.event.StampCreateEvent;
+import com.stampcrush.backend.config.lock.NamedLock;
 import com.stampcrush.backend.entity.cafe.Cafe;
 import com.stampcrush.backend.entity.cafe.CafeCouponDesign;
 import com.stampcrush.backend.entity.cafe.CafePolicy;
@@ -70,11 +71,12 @@ public class ManagerCouponCommandService {
         return new Coupon(expiredDate, customer, cafe, cafeCouponDesign, cafePolicy);
     }
 
-    public void createStamp(StampCreateDto stampCreateDto) {
+    @NamedLock(lockKey = "accumulateStamp", lockType = "couponId")
+    public void createStamp(StampCreateDto stampCreateDto, Long couponId) {
         Customer customer = findCustomer(stampCreateDto.getCustomerId());
         Owner owner = findOwner(stampCreateDto.getOwnerId());
         Cafe cafe = findCafe(owner);
-        Coupon coupon = findCoupon(stampCreateDto.getCouponId(), customer, cafe);
+        Coupon coupon = findCoupon(couponId, customer, cafe);
         isCorrectStampCountInCoupon(stampCreateDto, coupon);
 
         int earningStampCount = stampCreateDto.getEarningStampCount();
@@ -86,7 +88,7 @@ public class ManagerCouponCommandService {
         }
         // 스탬프 적립 시 쿠폰이 REWARD 상태로 바뀔 때
         if (coupon.isSameMaxStampAfterAccumulateStamp(earningStampCount)) {
-            accumulateMaxStampAndMakeReward(customer, cafe, coupon, earningStampCount);
+            accumulateMaxStampAndMakeReward(coupon, earningStampCount);
             return;
         }
 
@@ -129,13 +131,13 @@ public class ManagerCouponCommandService {
         }
     }
 
-    private void accumulateMaxStampAndMakeReward(Customer customer, Cafe cafe, Coupon coupon, int earningStampCount) {
+    private void accumulateMaxStampAndMakeReward(Coupon coupon, int earningStampCount) {
         coupon.accumulate(earningStampCount);
     }
 
     private void accumulateStampOverCoupon(Customer customer, Cafe cafe, Coupon coupon, int earningStampCount) {
         int restStampCountForReward = coupon.calculateRestStampCountForReward();
-        accumulateMaxStampAndMakeReward(customer, cafe, coupon, restStampCountForReward);
+        accumulateMaxStampAndMakeReward(coupon, restStampCountForReward);
 
         earningStampCount -= restStampCountForReward;
         CafePolicy cafePolicy = findCafePolicy(cafe);

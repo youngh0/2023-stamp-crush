@@ -3,7 +3,6 @@ package com.stampcrush.backend.api.manager.coupon;
 import com.stampcrush.backend.api.manager.coupon.request.CouponCreateRequest;
 import com.stampcrush.backend.api.manager.coupon.request.StampCreateRequest;
 import com.stampcrush.backend.api.manager.coupon.response.CouponCreateResponse;
-import com.stampcrush.backend.application.manager.coupon.CouponCommandFacadeService;
 import com.stampcrush.backend.application.manager.coupon.ManagerCouponCommandService;
 import com.stampcrush.backend.application.manager.coupon.dto.StampCreateDto;
 import com.stampcrush.backend.config.resolver.OwnerAuth;
@@ -23,7 +22,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class ManagerCouponCommandApiController {
 
     private final ManagerCouponCommandService managerCouponCommandService;
-    private final CouponCommandFacadeService couponCommandFacadeService;
 
     @PostMapping("/customers/{customerId}/coupons")
     public ResponseEntity<CouponCreateResponse> createCoupon(
@@ -43,7 +41,7 @@ public class ManagerCouponCommandApiController {
             @RequestBody @Valid StampCreateRequest request
     ) {
         StampCreateDto stampCreateDto = new StampCreateDto(owner.getId(), customerId, couponId, request.getEarningStampCount(), request.getCurrentStampCount());
-        couponCommandFacadeService.createStamp(stampCreateDto);
+        managerCouponCommandService.createStamp(stampCreateDto, stampCreateDto.getCouponId());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 }
