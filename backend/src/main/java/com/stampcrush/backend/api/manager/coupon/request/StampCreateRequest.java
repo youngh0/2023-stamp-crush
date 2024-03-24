@@ -16,4 +16,6 @@ public class StampCreateRequest {
     @NotNull
     @Positive
     private Integer earningStampCount;
+
+    private Integer currentStampCount;
 }
