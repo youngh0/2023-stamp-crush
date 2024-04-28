@@ -3,14 +3,19 @@ package com.stampcrush.backend.application.manager.event;
 import com.slack.api.Slack;
 import com.slack.api.model.Attachment;
 import com.slack.api.model.Field;
+import com.stampcrush.backend.entity.eventoutbox.StampAccumulateEventOutbox;
 import com.stampcrush.backend.entity.visithistory.VisitHistory;
+import com.stampcrush.backend.exception.NotFoundException;
 import com.stampcrush.backend.exception.StampCrushException;
+import com.stampcrush.backend.repository.eventoutbox.StampAccumulateEventOutboxRepository;
 import com.stampcrush.backend.repository.visithistory.VisitHistoryRepository;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.io.IOException;
@@ -29,12 +34,34 @@ public class StampAccumulatingEventHandler {
 
     private final Slack slackClient = Slack.getInstance();
     private final VisitHistoryRepository visitHistoryRepository;
+    private final StampAccumulateEventOutboxRepository stampAccumulateEventOutboxRepository;
+
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    @Transactional
+    public void saveStampAccumulateOutbox(StampCreateEvent stampCreateEvent) {
+        UUID eventId = stampCreateEvent.getEventId();
+        Long cafeId = stampCreateEvent.getCafe().getId();
+        Long customerId = stampCreateEvent.getCustomer().getId();
+        int stampCount = stampCreateEvent.getStampCount();
+
+        StampAccumulateEventOutbox stampOutbox = new StampAccumulateEventOutbox(eventId, cafeId, customerId, stampCount);
+        stampAccumulateEventOutboxRepository.save(stampOutbox);
+    }
 
     @TransactionalEventListener
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void createVisitHistory(StampCreateEvent stampCreateEvent) {
         VisitHistory visitHistory = new VisitHistory(stampCreateEvent.getCafe(), stampCreateEvent.getCustomer(), stampCreateEvent.getStampCount());
         visitHistoryRepository.save(visitHistory);
+
+        StampAccumulateEventOutbox stampAccumulateEventOutbox = findStampCreateEvent(stampCreateEvent);
+        stampAccumulateEventOutbox.success();
+    }
+
+    private StampAccumulateEventOutbox findStampCreateEvent(StampCreateEvent stampCreateEvent) {
+        return stampAccumulateEventOutboxRepository.findById(
+                        stampCreateEvent.getEventId())
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 event 입니다"));
     }
 
     @TransactionalEventListener
