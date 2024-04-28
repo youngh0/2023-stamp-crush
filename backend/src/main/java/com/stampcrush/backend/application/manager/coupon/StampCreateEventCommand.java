@@ -10,6 +10,6 @@ public class StampCreateEventCommand {
     }
 
     public static StampCreateEvent createEvent(Coupon coupon, int stampCount) {
-        return new StampCreateEvent(UUID.randomUUID(), coupon.getCafe(), coupon.getCustomer(), stampCount);
+        return new StampCreateEvent(UUID.randomUUID(), coupon.getCafe().getId(), coupon.getCustomer().getId(), stampCount);
     }
 }
