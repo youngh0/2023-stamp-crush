@@ -3,11 +3,17 @@ package com.stampcrush.backend.application.manager.event;
 import com.slack.api.Slack;
 import com.slack.api.model.Attachment;
 import com.slack.api.model.Field;
+import com.stampcrush.backend.entity.cafe.Cafe;
 import com.stampcrush.backend.entity.eventoutbox.StampAccumulateEventOutbox;
+import com.stampcrush.backend.entity.user.Customer;
 import com.stampcrush.backend.entity.visithistory.VisitHistory;
+import com.stampcrush.backend.exception.CafeNotFoundException;
+import com.stampcrush.backend.exception.CustomerNotFoundException;
 import com.stampcrush.backend.exception.NotFoundException;
 import com.stampcrush.backend.exception.StampCrushException;
+import com.stampcrush.backend.repository.cafe.CafeRepository;
 import com.stampcrush.backend.repository.eventoutbox.StampAccumulateEventOutboxRepository;
+import com.stampcrush.backend.repository.user.CustomerRepository;
 import com.stampcrush.backend.repository.visithistory.VisitHistoryRepository;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +39,9 @@ public class StampAccumulatingEventHandler {
     private String webHookUrl;
 
     private final Slack slackClient = Slack.getInstance();
+
+    private final CafeRepository cafeRepository;
+    private final CustomerRepository customerRepository;
     private final VisitHistoryRepository visitHistoryRepository;
     private final StampAccumulateEventOutboxRepository stampAccumulateEventOutboxRepository;
 
@@ -40,8 +49,8 @@ public class StampAccumulatingEventHandler {
     @Transactional
     public void saveStampAccumulateOutbox(StampCreateEvent stampCreateEvent) {
         UUID eventId = stampCreateEvent.getEventId();
-        Long cafeId = stampCreateEvent.getCafe().getId();
-        Long customerId = stampCreateEvent.getCustomer().getId();
+        Long cafeId = stampCreateEvent.getCafeId();
+        Long customerId = stampCreateEvent.getCustomerId();
         int stampCount = stampCreateEvent.getStampCount();
 
         StampAccumulateEventOutbox stampOutbox = new StampAccumulateEventOutbox(eventId, cafeId, customerId, stampCount);
@@ -51,7 +60,9 @@ public class StampAccumulatingEventHandler {
     @TransactionalEventListener
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void createVisitHistory(StampCreateEvent stampCreateEvent) {
-        VisitHistory visitHistory = new VisitHistory(stampCreateEvent.getCafe(), stampCreateEvent.getCustomer(), stampCreateEvent.getStampCount());
+        Cafe cafe = findCafe(stampCreateEvent.getCafeId());
+        Customer customer = findCustomer(stampCreateEvent.getCustomerId());
+        VisitHistory visitHistory = new VisitHistory(cafe, customer, stampCreateEvent.getStampCount());
         visitHistoryRepository.save(visitHistory);
 
         StampAccumulateEventOutbox stampAccumulateEventOutbox = findStampCreateEvent(stampCreateEvent);
@@ -66,9 +77,10 @@ public class StampAccumulatingEventHandler {
 
     @TransactionalEventListener
     public void process(StampCreateEvent stampCreateEvent) {
-        String userPhone = stampCreateEvent.getCafe().getTelephoneNumber();
+        Cafe cafe = findCafe(stampCreateEvent.getCafeId());
+        String userPhone = cafe.getTelephoneNumber();
         int stampCount = stampCreateEvent.getStampCount();
-        String cafeName = stampCreateEvent.getCafe().getName();
+        String cafeName = cafe.getName();
         try {
             slackClient.send(webHookUrl, payload(p -> p
                     .text("스탬프 적립 발생")
@@ -77,6 +89,16 @@ public class StampAccumulatingEventHandler {
         } catch (IOException e) {
             throw new StampCrushException(String.format("%s 번호 스탬프 %d개 적립 알림 전송 실패", userPhone, stampCount), e);
         }
+    }
+
+    private Cafe findCafe(Long cafeId) {
+        return cafeRepository.findById(cafeId)
+                .orElseThrow(() -> new CafeNotFoundException("존재하지 않는 카페입니다."));
+    }
+
+    private Customer findCustomer(Long customerId) {
+        return customerRepository.findById(customerId)
+                .orElseThrow(() -> new CustomerNotFoundException("존재하지 않는 고객입니다."));
     }
 
     private Attachment createStampInfo(String cafeName, String phone, int stampCount) {
