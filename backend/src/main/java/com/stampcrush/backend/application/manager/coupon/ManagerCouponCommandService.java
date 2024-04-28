@@ -80,7 +80,8 @@ public class ManagerCouponCommandService {
         isCorrectStampCountInCoupon(stampCreateDto, coupon);
 
         int earningStampCount = stampCreateDto.getEarningStampCount();
-        eventPublisher.publishEvent(new StampCreateEvent(cafe, customer, stampCreateDto.getEarningStampCount()));
+        StampCreateEvent stampCreateEvent = StampCreateEventCommand.createEvent(coupon, earningStampCount);
+        eventPublisher.publishEvent(stampCreateEvent);
         // 스탬프를 적립해도 쿠폰을 모두 채우지 않을 때
         if (coupon.isLessThanMaxStampAfterAccumulateStamp(earningStampCount)) {
             coupon.accumulate(earningStampCount);
