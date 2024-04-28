@@ -2,30 +2,20 @@ package com.stampcrush.backend.application.manager.coupon;
 
 import com.stampcrush.backend.application.manager.coupon.dto.StampCreateDto;
 import com.stampcrush.backend.application.manager.event.StampCreateEvent;
+import com.stampcrush.backend.config.lock.NamedLock;
 import com.stampcrush.backend.entity.cafe.Cafe;
 import com.stampcrush.backend.entity.cafe.CafeCouponDesign;
 import com.stampcrush.backend.entity.cafe.CafePolicy;
 import com.stampcrush.backend.entity.coupon.Coupon;
-import com.stampcrush.backend.entity.coupon.CouponDesign;
-import com.stampcrush.backend.entity.coupon.CouponPolicy;
 import com.stampcrush.backend.entity.coupon.CouponStatus;
-import com.stampcrush.backend.entity.reward.Reward;
 import com.stampcrush.backend.entity.user.Customer;
 import com.stampcrush.backend.entity.user.Owner;
-import com.stampcrush.backend.entity.visithistory.VisitHistory;
 import com.stampcrush.backend.exception.CafeNotFoundException;
-import com.stampcrush.backend.exception.CustomerNotFoundException;
-import com.stampcrush.backend.exception.OwnerNotFoundException;
 import com.stampcrush.backend.repository.cafe.CafeCouponDesignRepository;
-import com.stampcrush.backend.repository.cafe.CafePolicyRepository;
 import com.stampcrush.backend.repository.cafe.CafeRepository;
-import com.stampcrush.backend.repository.coupon.CouponDesignRepository;
-import com.stampcrush.backend.repository.coupon.CouponPolicyRepository;
 import com.stampcrush.backend.repository.coupon.CouponRepository;
-import com.stampcrush.backend.repository.reward.RewardRepository;
 import com.stampcrush.backend.repository.user.CustomerRepository;
 import com.stampcrush.backend.repository.user.OwnerRepository;
-import com.stampcrush.backend.repository.visithistory.VisitHistoryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -35,7 +25,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 @RequiredArgsConstructor
-@Transactional
+@Transactional()
 @Service
 public class ManagerCouponCommandService {
 
@@ -43,42 +33,32 @@ public class ManagerCouponCommandService {
     private final CafeRepository cafeRepository;
     private final CustomerRepository customerRepository;
     private final CafeCouponDesignRepository cafeCouponDesignRepository;
-    private final CafePolicyRepository cafePolicyRepository;
-    private final CouponDesignRepository couponDesignRepository;
-    private final CouponPolicyRepository couponPolicyRepository;
     private final OwnerRepository ownerRepository;
-    private final RewardRepository rewardRepository;
-    private final VisitHistoryRepository visitHistoryRepository;
     private final ApplicationEventPublisher eventPublisher;
-
-    private record CustomerCoupons(Customer customer, List<Coupon> coupons) {
-    }
 
     public Long createCoupon(Long ownerId, Long cafeId, Long customerId) {
         Cafe cafe = findCafeById(cafeId);
-        Owner owner = ownerRepository.findById(ownerId)
-                .orElseThrow(() -> new OwnerNotFoundException("회원가입을 먼저 진행해주세요"));
+        Owner owner = findOwner(ownerId);
 
         cafe.validateOwnership(owner);
 
-        Customer customer = findCustomerById(customerId);
+        Customer customer = findCustomer(customerId);
         CafePolicy cafePolicy = findCafePolicy(cafe);
         CafeCouponDesign cafeCouponDesign = findCafeCouponDesign(cafe);
         List<Coupon> existCoupons = couponRepository.findByCafeAndCustomerAndStatus(cafe, customer, CouponStatus.ACCUMULATING);
+        expireExistCoupons(existCoupons);
+
+        Coupon coupon = issueCoupon(customer, cafe, cafeCouponDesign, cafePolicy);
+        couponRepository.save(coupon);
+        return coupon.getId();
+    }
+
+    private void expireExistCoupons(List<Coupon> existCoupons) {
         if (!existCoupons.isEmpty()) {
             for (Coupon coupon : existCoupons) {
                 coupon.expire();
             }
         }
-
-        Coupon coupon = issueCoupon(customer, cafe, cafePolicy, cafeCouponDesign);
-        couponRepository.save(coupon);
-        return coupon.getId();
-    }
-
-    private Customer findCustomerById(Long customerId) {
-        return customerRepository.findById(customerId)
-                .orElseThrow(() -> new CustomerNotFoundException("존재하지 않는 회원입니다."));
     }
 
     private Cafe findCafeById(Long cafeId) {
@@ -86,63 +66,43 @@ public class ManagerCouponCommandService {
                 .orElseThrow(() -> new CafeNotFoundException("존재하지 않는 카페입니다."));
     }
 
-    private Coupon issueCoupon(Customer customer, Cafe cafe, CafePolicy cafePolicy, CafeCouponDesign cafeCouponDesign) {
-        CouponDesign couponDesign = cafeCouponDesign.copy();
-        couponDesignRepository.save(couponDesign);
-        CouponPolicy couponPolicy = cafePolicy.copy();
-        couponPolicyRepository.save(couponPolicy);
-
-        LocalDate expiredDate = LocalDate.now().plusMonths(couponPolicy.getExpiredPeriod());
-
-        return new Coupon(expiredDate, customer, cafe, couponDesign, couponPolicy);
+    private Coupon issueCoupon(Customer customer, Cafe cafe, CafeCouponDesign cafeCouponDesign, CafePolicy cafePolicy) {
+        LocalDate expiredDate = LocalDate.now().plusMonths(cafePolicy.getExpirePeriod());
+        return new Coupon(expiredDate, customer, cafe, cafeCouponDesign, cafePolicy);
     }
 
-    public void createStamp(StampCreateDto stampCreateDto) {
-        Owner owner = findOwner(stampCreateDto);
-        Customer customer = findCustomer(stampCreateDto);
+    @NamedLock(lockKey = "accumulateStamp", lockType = "couponId")
+    public void createStamp(StampCreateDto stampCreateDto, Long couponId) {
+        Customer customer = findCustomer(stampCreateDto.getCustomerId());
+        Owner owner = findOwner(stampCreateDto.getOwnerId());
         Cafe cafe = findCafe(owner);
-        CafePolicy cafePolicy = findCafePolicy(cafe);
-        CafeCouponDesign cafeCouponDesign = findCafeCouponDesign(cafe);
-        Coupon coupon = findCoupon(stampCreateDto, customer, cafe);
-        int earningStampCount = stampCreateDto.getEarningStampCount();
+        Coupon coupon = findCoupon(couponId, customer, cafe);
+        isCorrectStampCountInCoupon(stampCreateDto, coupon);
 
-        VisitHistory visitHistory = new VisitHistory(cafe, customer, earningStampCount);
-        visitHistoryRepository.save(visitHistory);
-        eventPublisher.publishEvent(new StampCreateEvent(cafe.getName(), customer.getPhoneNumber(), stampCreateDto.getEarningStampCount()));
+        int earningStampCount = stampCreateDto.getEarningStampCount();
+        eventPublisher.publishEvent(new StampCreateEvent(cafe, customer, stampCreateDto.getEarningStampCount()));
+        // 스탬프를 적립해도 쿠폰을 모두 채우지 않을 때
         if (coupon.isLessThanMaxStampAfterAccumulateStamp(earningStampCount)) {
             coupon.accumulate(earningStampCount);
             return;
         }
+        // 스탬프 적립 시 쿠폰이 REWARD 상태로 바뀔 때
         if (coupon.isSameMaxStampAfterAccumulateStamp(earningStampCount)) {
-            accumulateMaxStampAndMakeReward(customer, cafe, coupon, earningStampCount);
+            accumulateMaxStampAndMakeReward(coupon, earningStampCount);
             return;
         }
-        int restStamp = earningStampCount;
-        int restStampCountForReward = coupon.calculateRestStampCountForReward();
-        accumulateMaxStampAndMakeReward(customer, cafe, coupon, restStampCountForReward);
 
-        restStamp -= restStampCountForReward;
-        makeRewardCoupons(customer, cafe, cafePolicy, cafeCouponDesign, coupon, restStamp);
-        issueAccumulatingCoupon(customer, cafe, cafePolicy, cafeCouponDesign, restStamp);
+        // 적립하려는 스탬프 개수가 쿠폰의 남은 스탬프보다 많을 때
+        accumulateStampOverCoupon(customer, cafe, coupon, earningStampCount);
     }
 
-    private CafeCouponDesign findCafeCouponDesign(Cafe cafe) {
-        return cafeCouponDesignRepository.findByCafe(cafe)
+    private Customer findCustomer(Long customerId) {
+        return customerRepository.findById(customerId)
                 .orElseThrow(IllegalArgumentException::new);
     }
 
-    private CafePolicy findCafePolicy(Cafe cafe) {
-        return cafePolicyRepository.findByCafe(cafe)
-                .orElseThrow(IllegalArgumentException::new);
-    }
-
-    private Customer findCustomer(StampCreateDto stampCreateDto) {
-        return customerRepository.findById(stampCreateDto.getCustomerId())
-                .orElseThrow(IllegalArgumentException::new);
-    }
-
-    private Owner findOwner(StampCreateDto stampCreateDto) {
-        return ownerRepository.findById(stampCreateDto.getOwnerId())
+    private Owner findOwner(Long ownerId) {
+        return ownerRepository.findById(ownerId)
                 .orElseThrow(IllegalArgumentException::new);
     }
 
@@ -156,8 +116,8 @@ public class ManagerCouponCommandService {
                 .get();
     }
 
-    private Coupon findCoupon(StampCreateDto stampCreateDto, Customer customer, Cafe cafe) {
-        Coupon coupon = couponRepository.findById(stampCreateDto.getCouponId())
+    private Coupon findCoupon(Long couponId, Customer customer, Cafe cafe) {
+        Coupon coupon = couponRepository.findById(couponId)
                 .orElseThrow(IllegalArgumentException::new);
         if (coupon.isNotAccessible(customer, cafe)) {
             throw new IllegalArgumentException();
@@ -165,18 +125,42 @@ public class ManagerCouponCommandService {
         return coupon;
     }
 
-    private void accumulateMaxStampAndMakeReward(Customer customer, Cafe cafe, Coupon coupon, int earningStampCount) {
-        coupon.accumulate(earningStampCount);
-        rewardRepository.save(new Reward(coupon.getRewardName(), customer, cafe));
+    private void isCorrectStampCountInCoupon(StampCreateDto stampCreateDto, Coupon coupon) {
+        if (coupon.getStampCount() != stampCreateDto.getCurrentStampCount()) {
+            throw new IllegalArgumentException("incorrect stamp count");
+        }
     }
 
-    private void makeRewardCoupons(Customer customer, Cafe cafe, CafePolicy cafePolicy, CafeCouponDesign cafeCouponDesign, Coupon coupon, int restStamp) {
+    private void accumulateMaxStampAndMakeReward(Coupon coupon, int earningStampCount) {
+        coupon.accumulate(earningStampCount);
+    }
+
+    private void accumulateStampOverCoupon(Customer customer, Cafe cafe, Coupon coupon, int earningStampCount) {
+        int restStampCountForReward = coupon.calculateRestStampCountForReward();
+        accumulateMaxStampAndMakeReward(coupon, restStampCountForReward);
+
+        earningStampCount -= restStampCountForReward;
+        CafePolicy cafePolicy = findCafePolicy(cafe);
+        CafeCouponDesign cafeCouponDesign = findCafeCouponDesign(cafe);
+        makeRewardCoupons(customer, cafe, cafePolicy, cafeCouponDesign, earningStampCount);
+        issueAccumulatingCoupon(customer, cafe, cafePolicy, cafeCouponDesign, earningStampCount);
+    }
+
+    private CafeCouponDesign findCafeCouponDesign(Cafe cafe) {
+        return cafeCouponDesignRepository.findByCafeAndIsActivateTrue(cafe)
+                .orElseThrow(IllegalArgumentException::new);
+    }
+
+    private CafePolicy findCafePolicy(Cafe cafe) {
+        return cafe.getActiveCafePolicy();
+    }
+
+    private void makeRewardCoupons(Customer customer, Cafe cafe, CafePolicy cafePolicy, CafeCouponDesign cafeCouponDesign, int restStamp) {
         int rewardCouponCount = cafePolicy.calculateRewardCouponCount(restStamp);
         for (int i = 0; i < rewardCouponCount; i++) {
-            Coupon rewardCoupon = issueCoupon(customer, cafe, cafePolicy, cafeCouponDesign);
+            Coupon rewardCoupon = issueCoupon(customer, cafe, cafeCouponDesign, cafePolicy);
             rewardCoupon.accumulateMaxStamp();
             couponRepository.save(rewardCoupon);
-            rewardRepository.save(new Reward(coupon.getRewardName(), customer, cafe));
         }
     }
 
@@ -185,7 +169,7 @@ public class ManagerCouponCommandService {
         if (accumulatingStampCount == 0) {
             return;
         }
-        Coupon accumulatingCoupon = issueCoupon(customer, cafe, cafePolicy, cafeCouponDesign);
+        Coupon accumulatingCoupon = issueCoupon(customer, cafe, cafeCouponDesign, cafePolicy);
         couponRepository.save(accumulatingCoupon);
         accumulatingCoupon.accumulate(accumulatingStampCount);
     }

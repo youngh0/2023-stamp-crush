@@ -27,7 +27,6 @@ public class VisitorAuthController {
                         request.getEmail(),
                         request.getoAuthProvider(),
                         request.getoAuthId()
-                )
-        );
+                ));
     }
 }

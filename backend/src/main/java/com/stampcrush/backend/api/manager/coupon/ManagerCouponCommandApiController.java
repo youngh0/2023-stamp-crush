@@ -40,8 +40,8 @@ public class ManagerCouponCommandApiController {
             @PathVariable("couponId") Long couponId,
             @RequestBody @Valid StampCreateRequest request
     ) {
-        StampCreateDto stampCreateDto = new StampCreateDto(owner.getId(), customerId, couponId, request.getEarningStampCount());
-        managerCouponCommandService.createStamp(stampCreateDto);
+        StampCreateDto stampCreateDto = new StampCreateDto(owner.getId(), customerId, couponId, request.getEarningStampCount(), request.getCurrentStampCount());
+        managerCouponCommandService.createStamp(stampCreateDto, stampCreateDto.getCouponId());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 }

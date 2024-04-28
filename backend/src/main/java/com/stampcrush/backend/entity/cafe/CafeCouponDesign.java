@@ -3,7 +3,12 @@ package com.stampcrush.backend.entity.cafe;
 import com.stampcrush.backend.entity.baseentity.BaseDate;
 import com.stampcrush.backend.entity.coupon.CouponDesign;
 import com.stampcrush.backend.entity.coupon.CouponStampCoordinate;
-import jakarta.persistence.*;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.SQLDelete;
@@ -33,7 +38,8 @@ public class CafeCouponDesign extends BaseDate {
 
     private String stampImageUrl;
 
-    private Boolean deleted;
+    private Boolean deleted = Boolean.FALSE;
+    private Boolean isActivate = Boolean.TRUE;
 
     @ManyToOne(fetch = LAZY)
     @JoinColumn(name = "cafe_id")
@@ -42,16 +48,19 @@ public class CafeCouponDesign extends BaseDate {
     @OneToMany(mappedBy = "cafeCouponDesign")
     private List<CafeStampCoordinate> cafeStampCoordinates = new ArrayList<>();
 
-    public CafeCouponDesign(String frontImageUrl, String backImageUrl, String stampImageUrl, Boolean deleted, Cafe cafe) {
+    public CafeCouponDesign(String frontImageUrl, String backImageUrl, String stampImageUrl, Cafe cafe) {
         this.frontImageUrl = frontImageUrl;
         this.backImageUrl = backImageUrl;
         this.stampImageUrl = stampImageUrl;
-        this.deleted = deleted;
         this.cafe = cafe;
     }
 
     public void delete() {
         this.deleted = true;
+    }
+
+    public void disable() {
+        this.isActivate = Boolean.FALSE;
     }
 
     public CouponDesign copy() {
@@ -61,5 +70,9 @@ public class CafeCouponDesign extends BaseDate {
             couponDesign.addCouponStampCoordinate(couponStampCoordinate);
         }
         return couponDesign;
+    }
+
+    public void addCouponStampCoordinate(final CafeStampCoordinate stampCoordinate) {
+        cafeStampCoordinates.add(stampCoordinate);
     }
 }

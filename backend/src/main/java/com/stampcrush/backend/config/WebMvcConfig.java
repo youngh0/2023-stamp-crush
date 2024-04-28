@@ -27,7 +27,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
         registry.addInterceptor(ownerAuthInterceptor)
                 .addPathPatterns("/api/admin/**")
                 .excludePathPatterns("/api/admin/login/**")
-                .excludePathPatterns("/api/admin/owners");
+                .excludePathPatterns("/api/admin/owners")
+                .excludePathPatterns("/api/admin/auth/**")
+                .excludePathPatterns("/api/dev/login/**");
 
         registry.addInterceptor(customerAuthInterceptor)
                 .addPathPatterns("/api/**")
@@ -36,7 +38,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
                                 "/api/admin/**",
                                 "/api/login/**",
                                 "/api/swagger-ui/**",
-                                "/api/docs/**"
+                                "/api/docs/**",
+                                "/api/dev/login/**"
                         );
     }
 

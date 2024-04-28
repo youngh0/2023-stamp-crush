@@ -12,6 +12,7 @@ import com.stampcrush.backend.auth.api.request.OAuthRegisterOwnerCreateRequest;
 import com.stampcrush.backend.entity.user.Customer;
 import io.restassured.response.ExtractableResponse;
 import io.restassured.response.Response;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -389,7 +390,8 @@ class ManagerCouponCommandAcceptanceTest extends AcceptanceTest {
                 true,
                 10);
 
-        assertThat(coupons.getCoupons()).usingRecursiveFieldByFieldElementComparatorIgnoringFields("expireDate")
+        assertThat(coupons.getCoupons())
+                .usingRecursiveFieldByFieldElementComparatorIgnoringFields("expireDate")
                 .containsExactlyInAnyOrder(expected);
     }
 

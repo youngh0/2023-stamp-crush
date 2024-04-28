@@ -11,4 +11,5 @@ public class StampCreateDto {
     private final Long customerId;
     private final Long couponId;
     private final Integer earningStampCount;
+    private final Integer currentStampCount;
 }
