@@ -41,39 +41,6 @@ public class StampAccumulatingEventHandler {
     private final Slack slackClient = Slack.getInstance();
 
     private final CafeRepository cafeRepository;
-    private final CustomerRepository customerRepository;
-    private final VisitHistoryRepository visitHistoryRepository;
-    private final StampAccumulateEventOutboxRepository stampAccumulateEventOutboxRepository;
-
-    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
-    @Transactional
-    public void saveStampAccumulateOutbox(StampCreateEvent stampCreateEvent) {
-        UUID eventId = stampCreateEvent.getEventId();
-        Long cafeId = stampCreateEvent.getCafeId();
-        Long customerId = stampCreateEvent.getCustomerId();
-        int stampCount = stampCreateEvent.getStampCount();
-
-        StampAccumulateEventOutbox stampOutbox = new StampAccumulateEventOutbox(eventId, cafeId, customerId, stampCount);
-        stampAccumulateEventOutboxRepository.save(stampOutbox);
-    }
-
-    @TransactionalEventListener
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void createVisitHistory(StampCreateEvent stampCreateEvent) {
-        Cafe cafe = findCafe(stampCreateEvent.getCafeId());
-        Customer customer = findCustomer(stampCreateEvent.getCustomerId());
-        VisitHistory visitHistory = new VisitHistory(cafe, customer, stampCreateEvent.getStampCount());
-        visitHistoryRepository.save(visitHistory);
-
-        StampAccumulateEventOutbox stampAccumulateEventOutbox = findStampCreateEvent(stampCreateEvent);
-        stampAccumulateEventOutbox.success();
-    }
-
-    private StampAccumulateEventOutbox findStampCreateEvent(StampCreateEvent stampCreateEvent) {
-        return stampAccumulateEventOutboxRepository.findById(
-                        stampCreateEvent.getEventId())
-                .orElseThrow(() -> new NotFoundException("존재하지 않는 event 입니다"));
-    }
 
     @TransactionalEventListener
     public void process(StampCreateEvent stampCreateEvent) {
@@ -94,11 +61,6 @@ public class StampAccumulatingEventHandler {
     private Cafe findCafe(Long cafeId) {
         return cafeRepository.findById(cafeId)
                 .orElseThrow(() -> new CafeNotFoundException("존재하지 않는 카페입니다."));
-    }
-
-    private Customer findCustomer(Long customerId) {
-        return customerRepository.findById(customerId)
-                .orElseThrow(() -> new CustomerNotFoundException("존재하지 않는 고객입니다."));
     }
 
     private Attachment createStampInfo(String cafeName, String phone, int stampCount) {
